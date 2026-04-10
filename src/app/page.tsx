@@ -573,14 +573,24 @@ export default function Home() {
             </a>{" "}
             on the Tezos X EVM testnet.
           </p>
-          <a
-            href="https://demo.txpark.nomadic-labs.com/"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="shrink-0 text-white hover:text-white/75"
-          >
-            Read more
-          </a>
+          <div className="flex shrink-0 items-center gap-3">
+            <a
+              href="https://tezosx-evm-usdc-airdrop.vercel.app/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="rounded-full border border-white/25 bg-white/10 px-4 py-2 text-sm font-semibold text-white hover:bg-white/15"
+            >
+              Get XTZ
+            </a>
+            <a
+              href="https://demo.txpark.nomadic-labs.com/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-white hover:text-white/75"
+            >
+              Read more
+            </a>
+          </div>
         </div>
       </div>
 
