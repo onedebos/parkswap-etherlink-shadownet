@@ -1,36 +1,38 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# ParkSwap UI
 
-## Getting Started
+Minimal Next.js frontend for the Tezos X testnet `USDC / xU3O8` pool (ParkSwap).
 
-First, run the development server:
+## Run locally
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## What it does
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- Connects to an injected wallet like MetaMask or Rabby
+- Detects whether the wallet is on ParkSwap / Tezos X testnet (`127124`)
+- Shows live `USDC` and `XU3O8` wallet balances
+- Reads the live pool price from the deployed pool
+- Quotes swaps with the deployed quoter
+- Approves tokens for swap and liquidity
+- Swaps `USDC ↔ XU3O8`
+- Adds a full-range liquidity position with fixed defaults
 
-## Learn More
+## Wired contracts
 
-To learn more about Next.js, take a look at the following resources:
+- `USDC`: `0xB155450Fbbe8B5bF1F584374243c7bdE5609Ab1f`
+- `XU3O8`: `0xfBe9F61Da390178c9D1Bfa2d870B2916CE7e53BB`
+- `Pool`: `0xEfa19F1EB8608c19c84a7F74aB3cf8D1F92a3aA4`
+- `SwapRouter`: `0xc79Eb5Bd60Ac7cBF1C36fdCe0FF208B3b016947C`
+- `QuoterV2`: `0x156Aa25435Dd3A2B5D1E6881d651eE345A089c55`
+- `NonfungiblePositionManager`: `0xa87C8dd5FC8633Cf9452a03c8c604Ec5787d22d2`
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Notes
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- The app uses the public demo RPC: `https://demo.txpark.nomadic-labs.com/rpc`
+- The swap flow is intentionally MVP-simple and uses `amountOutMinimum = 0`
+- The liquidity action uses the existing fee tier `2500` and full-range ticks
