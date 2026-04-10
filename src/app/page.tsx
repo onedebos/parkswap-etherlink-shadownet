@@ -13,6 +13,7 @@ import {
   POOL_FEE,
   poolAbi,
   positionManagerAbi,
+  positionManagerActionsAbi,
   quoterAbi,
   swapRouterAbi,
   TOKENS,
@@ -22,6 +23,14 @@ import {
   type TokenKey,
   type WriteAction,
 } from "@/lib/txpark";
+import { loadLiquidityPositionMetrics, type LiquidityPositionMetrics } from "@/lib/position-metrics";
+import {
+  fetchParkswapLiquidityPositions,
+  positionMatchesAppPoolFee,
+  token0Symbol,
+  token1Symbol,
+  type ParkswapLiquidityPosition,
+} from "@/lib/user-positions";
 
 type EthereumProvider = {
   request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
@@ -47,6 +56,7 @@ type QuoteState = {
 };
 
 const publicProvider = new JsonRpcProvider(TXPARK_RPC_URL, TXPARK_CHAIN_ID);
+const MAX_U128 = (1n << 128n) - 1n;
 const tokenOrder = [TOKENS.usdc, TOKENS.xu3o8] as const;
 const tokenSwapPillClassName = "bg-white text-black";
 
@@ -62,7 +72,10 @@ function shortenAddress(value: string | null) {
   return `${value.slice(0, 6)}...${value.slice(-4)}`;
 }
 
-/** Human-readable chain name for known networks; otherwise numeric chain id. */
+function sameAddr(a: string, b: string) {
+  return a.toLowerCase() === b.toLowerCase();
+}
+
 function getConnectedChainDisplayName(chainId: number | null) {
   if (chainId === null) return "Unknown";
   if (chainId === TXPARK_CHAIN_ID) return "Tezos X EVM Testnet";
@@ -76,6 +89,12 @@ function formatBalance(value: bigint | null, decimals: number, fractionDigits = 
   return formatted.toLocaleString(undefined, {
     maximumFractionDigits: fractionDigits,
   });
+}
+
+/** Plain numeric string for liquidity inputs (no grouping). */
+function formatSuggestedLiquidityPairAmount(n: number, maximumFractionDigits: number) {
+  if (!Number.isFinite(n) || n < 0) return "";
+  return n.toLocaleString(undefined, { maximumFractionDigits, useGrouping: false });
 }
 
 function parseInputAmount(value: string, decimals: number) {
@@ -207,6 +226,10 @@ export default function Home() {
   const [pendingAction, setPendingAction] = useState<WriteAction | null>(null);
   const [swapAllowance, setSwapAllowance] = useState<bigint>(0n);
   const [liquidityAllowances, setLiquidityAllowances] = useState({ usdc: 0n, xu3o8: 0n });
+  const [userLiquidityPositions, setUserLiquidityPositions] = useState<ParkswapLiquidityPosition[]>([]);
+  const [positionMetrics, setPositionMetrics] = useState<Map<string, LiquidityPositionMetrics | null>>(new Map());
+  const [positionMetricsLoading, setPositionMetricsLoading] = useState(false);
+  const [liquiditySubView, setLiquiditySubView] = useState<"add" | "positions">("add");
 
   const swapTo = swapFrom === "usdc" ? "xu3o8" : "usdc";
   const swapInputParsed = parseInputAmount(swapAmount, TOKENS[swapFrom].decimals);
@@ -251,6 +274,16 @@ export default function Home() {
         usdc: nextUsdcLiquidityAllowance,
         xu3o8: nextXu3o8LiquidityAllowance,
       });
+
+      try {
+        const positions = await fetchParkswapLiquidityPositions(publicProvider, account);
+        setUserLiquidityPositions(positions);
+      } catch (err) {
+        console.error("fetchParkswapLiquidityPositions", err);
+        setUserLiquidityPositions([]);
+      }
+    } else {
+      setUserLiquidityPositions([]);
     }
   }, [swapFrom]);
 
@@ -280,6 +313,9 @@ export default function Home() {
     setBalances({ usdc: null, xu3o8: null });
     setSwapAllowance(0n);
     setLiquidityAllowances({ usdc: 0n, xu3o8: 0n });
+    setUserLiquidityPositions([]);
+    setPositionMetrics(new Map());
+    setPositionMetricsLoading(false);
     setAccountMenuOpen(false);
     toast.success("Wallet disconnected");
   }
@@ -468,6 +504,87 @@ export default function Home() {
     }
   }
 
+  async function collectFeesFromPosition(p: ParkswapLiquidityPosition) {
+    if (!wallet.isCorrectNetwork) {
+      toast.error("Switch to Tezos X EVM testnet first.");
+      return;
+    }
+    if (p.tokensOwed0 === 0n && p.tokensOwed1 === 0n) {
+      toast.error("No uncollected fees on this position.");
+      return;
+    }
+
+    setPendingAction("collect-fees");
+    toast.loading("Collecting fees...", { id: "collect-fees" });
+
+    try {
+      await withSigner(async (browserProvider, account) => {
+        const signer = await browserProvider.getSigner();
+        const npm = new Contract(ADDRESSES.positionManager, positionManagerActionsAbi, signer);
+        const tx = await npm.collect({
+          tokenId: p.tokenId,
+          recipient: account,
+          amount0Max: MAX_U128,
+          amount1Max: MAX_U128,
+        });
+        await tx.wait();
+      });
+      toast.success("Fees collected", { id: "collect-fees" });
+      await refreshReadState(wallet.account);
+    } catch (error) {
+      toast.error(getReadableErrorMessage(error), { id: "collect-fees" });
+    } finally {
+      setPendingAction(null);
+    }
+  }
+
+  async function removeLiquidityFromPosition(p: ParkswapLiquidityPosition) {
+    if (!wallet.isCorrectNetwork) {
+      toast.error("Switch to Tezos X EVM testnet first.");
+      return;
+    }
+    if (p.liquidity === 0n) {
+      toast.error("This position has no liquidity to remove.");
+      return;
+    }
+
+    setPendingAction("remove-liquidity");
+    toast.loading("Removing liquidity...", { id: "remove-liquidity" });
+
+    try {
+      await withSigner(async (browserProvider, account) => {
+        const signer = await browserProvider.getSigner();
+        const npm = new Contract(ADDRESSES.positionManager, positionManagerActionsAbi, signer);
+        const deadline = Math.floor(Date.now() / 1000) + 60 * 20;
+        const decreaseData = npm.interface.encodeFunctionData("decreaseLiquidity", [
+          {
+            tokenId: p.tokenId,
+            liquidity: p.liquidity,
+            amount0Min: 0n,
+            amount1Min: 0n,
+            deadline,
+          },
+        ]);
+        const collectData = npm.interface.encodeFunctionData("collect", [
+          {
+            tokenId: p.tokenId,
+            recipient: account,
+            amount0Max: MAX_U128,
+            amount1Max: MAX_U128,
+          },
+        ]);
+        const tx = await npm.multicall([decreaseData, collectData]);
+        await tx.wait();
+      });
+      toast.success("Liquidity removed and tokens collected", { id: "remove-liquidity" });
+      await refreshReadState(wallet.account);
+    } catch (error) {
+      toast.error(getReadableErrorMessage(error), { id: "remove-liquidity" });
+    } finally {
+      setPendingAction(null);
+    }
+  }
+
   useEffect(() => {
     refreshWalletState().catch(() => undefined);
     refreshReadState(null).catch(() => undefined);
@@ -502,6 +619,42 @@ export default function Home() {
       toast.error(getReadableErrorMessage(error));
     });
   }, [refreshReadState, wallet.account, wallet.chainId, swapFrom]);
+
+  useEffect(() => {
+    if (!wallet.account || !wallet.isCorrectNetwork) {
+      setPositionMetrics(new Map());
+      setPositionMetricsLoading(false);
+      return;
+    }
+    if (userLiquidityPositions.length === 0) {
+      setPositionMetrics(new Map());
+      setPositionMetricsLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setPositionMetricsLoading(true);
+    loadLiquidityPositionMetrics(publicProvider, userLiquidityPositions)
+      .then((map) => {
+        if (!cancelled) {
+          setPositionMetrics(map);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setPositionMetrics(new Map());
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setPositionMetricsLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [wallet.account, wallet.isCorrectNetwork, userLiquidityPositions]);
 
   useEffect(() => {
     if (!accountMenuOpen && !moreMenuOpen) return;
@@ -893,47 +1046,266 @@ export default function Home() {
             {activeView === "liquidity" && (
               <div className="w-full max-w-[500px] rounded-[30px] bg-[#191919] p-5">
                 <p className="text-sm text-white/55">Liquidity</p>
-                <h3 className="mt-1 text-xl font-semibold tracking-tight">Add to the pool</h3>
+                <h3 className="mt-1 text-xl font-semibold tracking-tight">USDC / {TOKENS.xu3o8.symbol}</h3>
 
-                <div className="mt-4 grid gap-3">
-                  <label className="rounded-[24px] border border-white/10 bg-black/25 p-4">
-                    <span className="mb-2 block text-sm text-white/55">USDC amount</span>
-                    <input
-                      value={liquidityUsdc}
-                      onChange={(event) => setLiquidityUsdc(event.target.value)}
-                      className="w-full bg-transparent text-3xl font-semibold outline-none"
-                      inputMode="decimal"
-                    />
-                  </label>
-                  <label className="rounded-[24px] border border-white/10 bg-black/25 p-4">
-                    <span className="mb-2 block text-sm text-white/55">{TOKENS.xu3o8.symbol} amount</span>
-                    <input
-                      value={liquidityXu3o8}
-                      onChange={(event) => setLiquidityXu3o8(event.target.value)}
-                      className="w-full bg-transparent text-3xl font-semibold outline-none"
-                      inputMode="decimal"
-                    />
-                  </label>
-                </div>
-
-                <div className="mt-4 grid gap-3">
+                <div className="mt-4 flex rounded-full bg-black/35 p-1">
                   <button
                     type="button"
-                    onClick={approveLiquidityTokens}
-                    disabled={!wallet.account || !wallet.isCorrectNetwork || !needsLiquidityApproval || pendingAction !== null}
-                    className="rounded-full bg-white/10 px-4 py-4 text-sm font-medium text-white enabled:hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-40"
+                    onClick={() => setLiquiditySubView("add")}
+                    className={`flex-1 rounded-full py-2.5 text-sm font-semibold transition ${
+                      liquiditySubView === "add" ? "bg-white text-slate-950 shadow-sm" : "text-white/55 hover:text-white/80"
+                    }`}
                   >
-                    {pendingAction === "approve-liquidity" ? "Approving..." : needsLiquidityApproval ? "Approve for liquidity" : "Liquidity approved"}
+                    Add
                   </button>
                   <button
                     type="button"
-                    onClick={addLiquidity}
-                    disabled={!wallet.account || !wallet.isCorrectNetwork || needsLiquidityApproval || pendingAction !== null}
-                    className="rounded-full bg-white px-4 py-4 text-sm font-semibold text-slate-950 enabled:hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-40"
+                    onClick={() => setLiquiditySubView("positions")}
+                    className={`flex-1 rounded-full py-2.5 text-sm font-semibold transition ${
+                      liquiditySubView === "positions"
+                        ? "bg-white text-slate-950 shadow-sm"
+                        : "text-white/55 hover:text-white/80"
+                    }`}
                   >
-                    {pendingAction === "liquidity" ? "Adding liquidity..." : "Add liquidity"}
+                    Positions
                   </button>
                 </div>
+
+                {liquiditySubView === "add" ? (
+                  <div className="mt-5">
+                    <p className="text-xs text-white/40">Amounts linked to pool price</p>
+
+                    <div className="mt-3 grid gap-3">
+                      <label className="rounded-[24px] border border-white/10 bg-black/25 p-4">
+                        <span className="mb-2 block text-sm text-white/55">USDC</span>
+                        <input
+                          value={liquidityUsdc}
+                          onChange={(event) => {
+                            const v = event.target.value;
+                            setLiquidityUsdc(v);
+                            const t = v.trim();
+                            if (!t || poolState.xu3o8PerUsdc == null) return;
+                            const u = parseFloat(t.replace(/,/g, ""));
+                            if (!Number.isFinite(u)) return;
+                            setLiquidityXu3o8(formatSuggestedLiquidityPairAmount(u * poolState.xu3o8PerUsdc, 8));
+                          }}
+                          className="w-full bg-transparent text-3xl font-semibold outline-none"
+                          inputMode="decimal"
+                        />
+                      </label>
+                      <label className="rounded-[24px] border border-white/10 bg-black/25 p-4">
+                        <span className="mb-2 block text-sm text-white/55">{TOKENS.xu3o8.symbol}</span>
+                        <input
+                          value={liquidityXu3o8}
+                          onChange={(event) => {
+                            const v = event.target.value;
+                            setLiquidityXu3o8(v);
+                            const t = v.trim();
+                            if (!t || poolState.usdcPerXu3o8 == null) return;
+                            const x = parseFloat(t.replace(/,/g, ""));
+                            if (!Number.isFinite(x)) return;
+                            setLiquidityUsdc(formatSuggestedLiquidityPairAmount(x * poolState.usdcPerXu3o8, 6));
+                          }}
+                          className="w-full bg-transparent text-3xl font-semibold outline-none"
+                          inputMode="decimal"
+                        />
+                      </label>
+                    </div>
+
+                    <div className="mt-4 grid gap-3">
+                      <button
+                        type="button"
+                        onClick={approveLiquidityTokens}
+                        disabled={
+                          !wallet.account || !wallet.isCorrectNetwork || !needsLiquidityApproval || pendingAction !== null
+                        }
+                        className="rounded-full bg-white/10 px-4 py-4 text-sm font-medium text-white enabled:hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        {pendingAction === "approve-liquidity"
+                          ? "Approving..."
+                          : needsLiquidityApproval
+                            ? "Approve"
+                            : "Approved"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={addLiquidity}
+                        disabled={
+                          !wallet.account || !wallet.isCorrectNetwork || needsLiquidityApproval || pendingAction !== null
+                        }
+                        className="rounded-full bg-white px-4 py-4 text-sm font-semibold text-slate-950 enabled:hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        {pendingAction === "liquidity" ? "Adding…" : "Add"}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mt-5">
+                    {!wallet.account ? (
+                      <p className="mt-3 text-sm text-white/45">Connect wallet</p>
+                    ) : !wallet.isCorrectNetwork ? (
+                      <p className="mt-3 text-sm text-white/45">Switch network</p>
+                    ) : userLiquidityPositions.length === 0 ? (
+                      <p className="mt-3 text-sm text-white/45">No positions</p>
+                    ) : (
+                      <div className="mt-3 space-y-3">
+                        {positionMetricsLoading ? (
+                          <p className="text-xs text-white/45">Loading…</p>
+                        ) : null}
+                        <ul className="space-y-3">
+                          {userLiquidityPositions.map((p) => {
+                            const d0 = sameAddr(p.token0, ADDRESSES.usdc) ? TOKENS.usdc.decimals : TOKENS.xu3o8.decimals;
+                            const d1 = sameAddr(p.token1, ADDRESSES.usdc) ? TOKENS.usdc.decimals : TOKENS.xu3o8.decimals;
+                            const m = positionMetrics.get(p.tokenId.toString()) ?? null;
+                            const hasFees = p.tokensOwed0 > 0n || p.tokensOwed1 > 0n;
+                            const canRemove = p.liquidity > 0n;
+                            const mainFeeLabel = (POOL_FEE / 10000).toFixed(2);
+                            const posFeeLabel = (p.fee / 10000).toFixed(2);
+
+                            const valueLine =
+                              m && m.positionValueUsdApprox !== null && Number.isFinite(m.positionValueUsdApprox) ? (
+                                m.positionValueUsdApprox >= 100 ? (
+                                  <>~${Math.round(m.positionValueUsdApprox).toLocaleString()}</>
+                                ) : (
+                                  <>
+                                    ~$
+                                    {m.positionValueUsdApprox.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                                  </>
+                                )
+                              ) : (
+                                "—"
+                              );
+
+                            return (
+                              <li
+                                key={p.tokenId.toString()}
+                                className="rounded-[20px] border border-white/10 bg-black/25 p-4 text-sm text-white/75"
+                              >
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="text-sm font-medium text-white/90">#{p.tokenId.toString()}</span>
+                                </div>
+
+                                {m ? (
+                                  <>
+                                    <div className="mt-3 rounded-2xl border border-white/10 bg-gradient-to-br from-white/[0.09] to-white/[0.02] px-4 py-3">
+                                      <p className="text-[10px] font-medium uppercase tracking-wider text-white/40">Value</p>
+                                      <p className="mt-0.5 text-2xl font-semibold tracking-tight text-white">{valueLine}</p>
+                                    </div>
+
+                                    <p className="mt-2 text-xs text-white/55">
+                                      {positionMatchesAppPoolFee(p.fee) ? (
+                                        <>Main pool · {mainFeeLabel}%</>
+                                      ) : (
+                                        <>Fee {posFeeLabel}% · swap uses {mainFeeLabel}%</>
+                                      )}
+                                    </p>
+
+                                    <p className="mt-1 text-xs">
+                                      {m.isInRange ? (
+                                        <span className="text-emerald-400/90">In range</span>
+                                      ) : (
+                                        <span className="text-amber-200/90">Out of range</span>
+                                      )}
+                                    </p>
+
+                                    <div className="mt-2 grid gap-1 text-xs text-white/70">
+                                      <p>
+                                        <span className="text-white/40">Started </span>
+                                        {m.initialDepositUsdc !== null && m.initialDepositXu3o8 !== null ? (
+                                          <span>
+                                            {m.initialDepositUsdc.toLocaleString(undefined, { maximumFractionDigits: 2 })} USDC
+                                            +{" "}
+                                            {m.initialDepositXu3o8.toLocaleString(undefined, { maximumFractionDigits: 6 })}{" "}
+                                            {TOKENS.xu3o8.symbol}
+                                          </span>
+                                        ) : (
+                                          <span className="text-white/40">—</span>
+                                        )}
+                                      </p>
+                                      <p>
+                                        <span className="text-white/40">Now </span>
+                                        <span>
+                                          ~{m.currentCompositionUsdc.toLocaleString(undefined, { maximumFractionDigits: 2 })}{" "}
+                                          USDC + ~
+                                          {m.currentCompositionXu3o8.toLocaleString(undefined, { maximumFractionDigits: 6 })}{" "}
+                                          {TOKENS.xu3o8.symbol}
+                                        </span>
+                                      </p>
+                                    </div>
+
+                                    <p className="mt-2 text-xs text-white/70">
+                                      <span className="text-white/40">Range </span>
+                                      {m.isFullRange ? (
+                                        <>Full range (active at all prices)</>
+                                      ) : (
+                                        m.priceRangeLabel
+                                      )}
+                                    </p>
+
+                                    {m.poolSharePercentApprox !== null ? (
+                                      <p className="mt-1 text-xs text-white/70">
+                                        <span className="text-white/40">Your share of the pool </span>
+                                        ~{m.poolSharePercentApprox.toLocaleString(undefined, { maximumFractionDigits: 2 })}%
+                                      </p>
+                                    ) : null}
+                                  </>
+                                ) : (
+                                  <p className="mt-3 text-xs text-amber-200/80">Pool data unavailable</p>
+                                )}
+
+                                <div className="mt-4 flex flex-col gap-2">
+                                  <div className="flex flex-wrap gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => removeLiquidityFromPosition(p)}
+                                      disabled={!wallet.isCorrectNetwork || !canRemove || pendingAction !== null}
+                                      className="rounded-full bg-white/10 px-3 py-2 text-xs font-medium text-white enabled:hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-40"
+                                    >
+                                      {pendingAction === "remove-liquidity" ? "Removing…" : "Remove"}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => collectFeesFromPosition(p)}
+                                      disabled={!wallet.isCorrectNetwork || !hasFees || pendingAction !== null}
+                                      className="rounded-full bg-white/10 px-3 py-2 text-xs font-medium text-white enabled:hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-40"
+                                    >
+                                      {pendingAction === "collect-fees" ? "Collecting…" : "Collect fees"}
+                                    </button>
+                                  </div>
+                                  {!hasFees ? <p className="text-[10px] text-white/35">No fees yet</p> : null}
+                                </div>
+
+                                <details className="mt-2 rounded-lg border border-white/10 bg-black/20 px-2.5 py-1.5">
+                                  <summary className="cursor-pointer select-none text-[11px] text-white/50">Advanced</summary>
+                                  <div className="mt-1.5 grid gap-1 border-t border-white/10 pt-1.5 text-[10px] text-white/40">
+                                    <p>
+                                      Fee {p.fee}
+                                      {positionMatchesAppPoolFee(p.fee) ? (
+                                        <span className="text-emerald-400/70"> · main</span>
+                                      ) : (
+                                        <span className="text-amber-200/70"> · not {POOL_FEE}</span>
+                                      )}
+                                    </p>
+                                    <p>
+                                      Owed {token0Symbol(p)} {formatUnits(p.tokensOwed0, d0)}
+                                    </p>
+                                    <p>
+                                      Owed {token1Symbol(p)} {formatUnits(p.tokensOwed1, d1)}
+                                    </p>
+                                    <p>
+                                      Ticks {p.tickLower} → {p.tickUpper}
+                                    </p>
+                                    <p className="break-all">L {p.liquidity.toString()}</p>
+                                  </div>
+                                </details>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
           </div>

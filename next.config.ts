@@ -1,10 +1,21 @@
 import type { NextConfig } from "next";
 import path from "path";
 
-/** Lock root to this app so Turbopack does not infer a parent monorepo (and Vercel paths stay correct). */
+/** This app directory only — not the parent monorepo. Keeps dev/build from inferring txpark-dex as root. */
+const projectRoot = path.resolve(__dirname);
+const localNodeModules = path.join(projectRoot, "node_modules");
+
 const nextConfig: NextConfig = {
+  outputFileTracingRoot: projectRoot,
   turbopack: {
-    root: path.join(__dirname),
+    root: projectRoot,
+  },
+  webpack: (config) => {
+    config.resolve.modules = [
+      localNodeModules,
+      ...(Array.isArray(config.resolve.modules) ? config.resolve.modules : []),
+    ];
+    return config;
   },
 };
 
