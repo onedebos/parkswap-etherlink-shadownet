@@ -1,7 +1,7 @@
 import { getAddress, isAddress } from "ethers";
 
 /**
- * Default deployment: Tezos X EVM demo (ParkSwap / txpark).
+ * Default deployment: Etherlink Shadownet.
  * Override any value with `NEXT_PUBLIC_*` — see `.env.example`.
  */
 
@@ -30,27 +30,27 @@ function parsePositiveIntEnv(key: string, fallback: number): number {
 }
 
 function parseChainId(): number {
-  return parsePositiveIntEnv("NEXT_PUBLIC_CHAIN_ID", 127124);
+  return parsePositiveIntEnv("NEXT_PUBLIC_CHAIN_ID", 127823);
 }
 
 function chainIdToHex(chainId: number): string {
   return `0x${chainId.toString(16)}`;
 }
 
-/** ParkSwap demo — Uniswap v3–style periphery on Tezos X EVM testnet. */
-const DEFAULT_SWAP_ROUTER = "0xc79Eb5Bd60Ac7cBF1C36fdCe0FF208B3b016947C";
-const DEFAULT_QUOTER_V2 = "0x156Aa25435Dd3A2B5D1E6881d651eE345A089c55";
-const DEFAULT_POSITION_MANAGER = "0xa87C8dd5FC8633Cf9452a03c8c604Ec5787d22d2";
-const DEFAULT_FACTORY = "0xFbee097322418557d04285E51a17934E8b4C3f22";
+/** Etherlink Shadownet defaults for this standalone deployment. */
+const DEFAULT_SWAP_ROUTER = "0xEF1d06d1dA6074136b3fA588D16265aB3e328823";
+const DEFAULT_QUOTER_V2 = "0x8DE864210ebD4aD09B5D70d5992F7Ab79fb8D031";
+const DEFAULT_POSITION_MANAGER = "0x9d6e607fdcdf1c31df6C5dA59fC3786Cbe474EaD";
+const DEFAULT_FACTORY = "0xE40476E6ED2B62ecBDac9e2e5EEc8b402c24Bd15";
 
-const DEFAULT_USDC = "0xB155450Fbbe8B5bF1F584374243c7bdE5609Ab1f";
-const DEFAULT_XU3O8 = "0xfBe9F61Da390178c9D1Bfa2d870B2916CE7e53BB";
-const DEFAULT_VNXAU = "0xb7e6Bd22220C212Fb764A8509EB4A02216D4f419";
+const DEFAULT_USDC = "0xE5131B396a18aB7d3D9716A06114cEC9EDEF9879";
+const DEFAULT_XU3O8 = "0x556172039d9D854FE3B900267375DBebf48A1bf0";
+const DEFAULT_VNXAU = "0xFABF9A6DbD6548958E93fe94dfAA2fd6e009cD82";
 
-const DEFAULT_BLOCK_EXPLORER = "https://demo-blockscout.txpark.nomadic-labs.com";
-const DEFAULT_RPC = "https://demo.txpark.nomadic-labs.com/rpc";
+const DEFAULT_BLOCK_EXPLORER = "https://shadownet.explorer.etherlink.com";
+const DEFAULT_RPC = "https://node.shadownet.etherlink.com";
 
-const DEFAULT_FEATURED_POOL = "0xEfa19F1EB8608c19c84a7F74aB3cf8D1F92a3aA4";
+const DEFAULT_FEATURED_POOL = "0x1c97bFFf8CCD5576a87C826f1845c0806Ac3Ae7E";
 
 export type DexChainErc20Meta = {
   address: `0x${string}`;
@@ -94,23 +94,20 @@ function buildDexChainConfig(): DexChainConfig {
   const explicitVnxauAddr =
     parseOptionalAddressEnv("NEXT_PUBLIC_VNXAU_TOKEN_ADDRESS") ??
     parseOptionalAddressEnv("NEXT_PUBLIC_TOKEN_VNXAU_ADDRESS");
-  const vnxauAddr =
-    explicitVnxauAddr ??
-    (chainId === 127124 ? (getAddress(DEFAULT_VNXAU) as `0x${string}`) : null);
+  const vnxauAddr = explicitVnxauAddr ?? (getAddress(DEFAULT_VNXAU) as `0x${string}`);
 
   const explicitPool =
     parseOptionalAddressEnv("NEXT_PUBLIC_FEATURED_POOL_ADDRESS") ??
     parseOptionalAddressEnv("NEXT_PUBLIC_DASHBOARD_POOL_ADDRESS");
   const featuredPool: `0x${string}` | null =
-    explicitPool ??
-    (chainId === 127124 ? (getAddress(DEFAULT_FEATURED_POOL) as `0x${string}`) : null);
+    explicitPool ?? (getAddress(DEFAULT_FEATURED_POOL) as `0x${string}`);
 
   return {
     chainId,
     chainIdHex,
     rpcUrl: envTrim("NEXT_PUBLIC_RPC_URL") ?? DEFAULT_RPC,
     blockExplorerDefaultUrl: envTrim("NEXT_PUBLIC_BLOCK_EXPLORER_URL") ?? DEFAULT_BLOCK_EXPLORER,
-    networkDisplayName: envTrim("NEXT_PUBLIC_NETWORK_DISPLAY_NAME") ?? "Tezos X EVM Testnet",
+    networkDisplayName: envTrim("NEXT_PUBLIC_NETWORK_DISPLAY_NAME") ?? "Etherlink Shadownet",
     walletAddEthereumChainName: envTrim("NEXT_PUBLIC_WALLET_CHAIN_NAME") ?? "ParkSwap",
     nativeCurrency: {
       name: envTrim("NEXT_PUBLIC_NATIVE_CURRENCY_NAME") ?? "TXP",

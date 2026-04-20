@@ -26,7 +26,6 @@ import {
   poolAbi,
   sameAddress,
   txparkExplorerAddressUrl,
-  walletChainLabel,
   type TokenConfig,
   type WriteAction,
 } from "@/lib/txpark";
@@ -126,10 +125,6 @@ function shortenTxHash(hash: string) {
   return `${hash.slice(0, 10)}…${hash.slice(-8)}`;
 }
 
-function getConnectedChainDisplayName(chainId: number | null) {
-  return walletChainLabel(chainId);
-}
-
 function formatBalance(value: bigint | null, decimals: number, fractionDigits = 4) {
   if (value === null) return "0";
   const formatted = Number(formatUnits(value, decimals));
@@ -201,17 +196,26 @@ async function readPoolState() {
 
 async function readBalancesForMerged(account: string, tokens: TokenConfig[]) {
   const out: Record<string, bigint> = {};
-  await Promise.all(
+  const results = await Promise.allSettled(
     tokens.map(async (token) => {
       const c = new Contract(token.address, erc20Abi, publicProvider);
-      out[token.key] = (await c.balanceOf(account)) as bigint;
+      const balance = (await c.balanceOf(account)) as bigint;
+      return { key: token.key, balance, address: token.address, symbol: token.symbol };
     }),
   );
+
+  for (const result of results) {
+    if (result.status === "fulfilled") {
+      out[result.value.key] = result.value.balance;
+    } else {
+      console.error("Failed to read token balance", result.reason);
+    }
+  }
   return out;
 }
 
 export default function Home() {
-  const [activeView, setActiveView] = useState<"trade" | "wallet" | "pool" | "liquidity" | "create" | "recent-tokens">(
+  const [activeView, setActiveView] = useState<"trade" | "wallet" | "pool" | "liquidity" | "create" | "recent-tokens" | "faucet">(
     "trade",
   );
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
@@ -245,6 +249,8 @@ export default function Home() {
     tokenBKey: string;
   } | null>(null);
   const [pendingAction, setPendingAction] = useState<WriteAction | null>(null);
+  const [faucetPending, setFaucetPending] = useState(false);
+  const [faucetResult, setFaucetResult] = useState<Array<{ symbol: string; txHash: string }> | null>(null);
 
   const deployedAsTokenConfig = useMemo(() => deployedTokens.map(deployedRecordToTokenConfig), [deployedTokens]);
 
@@ -279,11 +285,10 @@ export default function Home() {
     const ethereum = getEthereumProvider();
     if (!ethereum) return;
 
-    const browserProvider = new BrowserProvider(ethereum);
-    const network = await browserProvider.getNetwork();
     const accounts = (await ethereum.request({ method: "eth_accounts" })) as string[];
+    const chainIdHex = (await ethereum.request({ method: "eth_chainId" })) as string;
     const account = accounts[0] ?? null;
-    const chainId = Number(network.chainId);
+    const chainId = Number.parseInt(chainIdHex, 16);
 
     setWallet({
       account,
@@ -293,60 +298,45 @@ export default function Home() {
   }, []);
 
   const refreshReadState = useCallback(async (account?: string | null) => {
-    const [nextPoolState, nextBalances] = await Promise.all([
+    const [poolResult, balancesResult] = await Promise.allSettled([
       readPoolState(),
       account ? readBalancesForMerged(account, mergedTokens) : Promise.resolve({} as Record<string, bigint>),
     ]);
 
-    setPoolState(nextPoolState);
+    if (poolResult.status === "fulfilled") {
+      setPoolState(poolResult.value);
+    } else {
+      setPoolState({
+        usdcPerXu3o8: null,
+        xu3o8PerUsdc: null,
+        liquidity: null,
+      });
+      console.error("Failed to read pool state", poolResult.reason);
+    }
+
     if (account) {
-      const withKeys: Record<string, bigint | null> = {};
-      for (const t of mergedTokens) {
-        withKeys[t.key] = nextBalances[t.key] ?? 0n;
+      if (balancesResult.status === "fulfilled") {
+        const withKeys: Record<string, bigint | null> = {};
+        for (const t of mergedTokens) {
+          withKeys[t.key] = balancesResult.value[t.key] ?? 0n;
+        }
+        setBalancesByKey(withKeys);
+      } else {
+        console.error("Failed to read token balances", balancesResult.reason);
+        throw balancesResult.reason;
       }
-      setBalancesByKey(withKeys);
     } else {
       setBalancesByKey({});
     }
   }, [mergedTokens]);
 
-  async function connectWallet() {
-    const ethereum = getEthereumProvider();
-    if (!ethereum) {
-      toast.error("No wallet detected. Open the app in MetaMask or Rabby.");
-      return;
-    }
-
-    try {
-      await ethereum.request({ method: "eth_requestAccounts" });
-      await refreshWalletState();
-      setAccountMenuOpen(false);
-      toast.success("Wallet connected");
-    } catch (error) {
-      toast.error(getReadableErrorMessage(error));
-    }
-  }
-
-  function disconnectWallet() {
-    setWallet({
-      account: null,
-      chainId: null,
-      isCorrectNetwork: false,
-    });
-    setBalancesByKey({});
-    setAccountMenuOpen(false);
-    toast.success("Wallet disconnected");
-  }
-
-  async function switchToParkSwap() {
-    const ethereum = getEthereumProvider();
-    if (!ethereum) return;
-
+  async function requestConfiguredNetworkSwitch(ethereum: EthereumProvider) {
     try {
       await ethereum.request({
         method: "wallet_switchEthereumChain",
         params: [{ chainId: TXPARK_HEX_CHAIN_ID }],
       });
+      return true;
     } catch (error) {
       try {
         await ethereum.request({
@@ -360,11 +350,95 @@ export default function Home() {
             },
           ],
         });
+        return true;
       } catch (innerError) {
         toast.error(getReadableErrorMessage(innerError ?? error));
-        return;
+        return false;
       }
     }
+  }
+
+  async function connectWallet() {
+    const ethereum = getEthereumProvider();
+    if (!ethereum) {
+      toast.error("No wallet detected. Open the app in MetaMask or Rabby.");
+      return;
+    }
+
+    try {
+      await ethereum.request({ method: "eth_requestAccounts" });
+      const switched = await requestConfiguredNetworkSwitch(ethereum);
+      await refreshWalletState();
+      setAccountMenuOpen(false);
+      if (!switched) return;
+      toast.success(`Wallet connected to ${dexChainConfig.networkDisplayName}`);
+    } catch (error) {
+      toast.error(getReadableErrorMessage(error));
+    }
+  }
+
+  async function disconnectWallet() {
+    const ethereum = getEthereumProvider();
+    if (ethereum) {
+      try {
+        await ethereum.request({
+          method: "wallet_revokePermissions",
+          params: [{ eth_accounts: {} }],
+        });
+      } catch {
+        // Some injected wallets don't support permission revocation; still clear local app state below.
+      }
+    }
+    setWallet({
+      account: null,
+      chainId: null,
+      isCorrectNetwork: false,
+    });
+    setBalancesByKey({});
+    setAccountMenuOpen(false);
+    toast.success("Wallet disconnected");
+  }
+
+  async function claimFaucet() {
+    if (!wallet.account) {
+      toast.error("Connect your wallet before claiming faucet tokens.");
+      return;
+    }
+    setFaucetPending(true);
+    setFaucetResult(null);
+    toast.loading("Sending 5 USDC, 5 xU3O8, and 5 VNXAU...", { id: "faucet-claim" });
+
+    try {
+      const response = await fetch("/api/faucet/claim", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ address: wallet.account }),
+      });
+
+      const payload = (await response.json()) as
+        | { error?: string; transfers?: Array<{ symbol: string; txHash: string }> }
+        | undefined;
+
+      if (!response.ok || !payload?.transfers) {
+        throw new Error(payload?.error || "Faucet request failed.");
+      }
+
+      setFaucetResult(payload.transfers);
+      await refreshReadState(wallet.account);
+      toast.success("Faucet transfer confirmed.", { id: "faucet-claim" });
+    } catch (error) {
+      toast.error(getReadableErrorMessage(error), { id: "faucet-claim" });
+    } finally {
+      setFaucetPending(false);
+    }
+  }
+
+  async function switchToParkSwap() {
+    const ethereum = getEthereumProvider();
+    if (!ethereum) return;
+
+    const switched = await requestConfiguredNetworkSwitch(ethereum);
+    if (!switched) return;
 
     await refreshWalletState();
     toast.success(`Switched to ${dexChainConfig.networkDisplayName}`);
@@ -529,6 +603,7 @@ export default function Home() {
                 { key: "wallet", label: "Wallet" },
                 { key: "pool", label: "Pool" },
                 { key: "liquidity", label: "Liquidity" },
+                { key: "faucet", label: "Faucet" },
                 { key: "create", label: "Create Token" },
                 { key: "recent-tokens", label: "Recent Tokens" },
               ].map((item) => (
@@ -590,7 +665,7 @@ export default function Home() {
                   onClick={wallet.isCorrectNetwork ? () => setAccountMenuOpen((open) => !open) : switchToParkSwap}
                   className="rounded-full bg-white px-5 py-2.5 text-sm font-semibold text-black hover:bg-white/85"
                 >
-                  {wallet.isCorrectNetwork ? shortenAddress(wallet.account) : "Switch to ParkSwap"}
+                  {wallet.isCorrectNetwork ? shortenAddress(wallet.account) : `Switch to ${dexChainConfig.networkDisplayName}`}
                 </button>
                 {wallet.isCorrectNetwork && accountMenuOpen && (
                   <div className="absolute right-0 z-30 mt-2 min-w-[220px] rounded-2xl border border-white/10 bg-[#1b1b1b] p-2 shadow-2xl">
@@ -924,6 +999,55 @@ export default function Home() {
                     </div>
                   </aside>
                 ) : null}
+              </div>
+            )}
+
+            {activeView === "faucet" && (
+              <div className="w-full max-w-[560px] rounded-[30px] bg-[#191919] p-5">
+                <p className="text-sm text-white/55">Faucet</p>
+                <h3 className="mt-1 text-xl font-semibold tracking-tight">Claim test tokens</h3>
+                <p className="mt-2 text-sm text-white/45">
+                  A connected wallet can receive an airdrop of <span className="text-white">5 USDC</span>,{" "}
+                  <span className="text-white">5 xU3O8</span>, and <span className="text-white">5 VNXAU</span> from the
+                  project faucet wallet.
+                </p>
+
+                <div className="mt-6 rounded-[24px] border border-white/10 bg-black/20 p-4">
+                  <p className="text-sm text-white/45">Recipient wallet</p>
+                  <p className="mt-1 break-all font-mono text-sm text-white/85">
+                    {wallet.account ?? "Connect wallet to claim"}
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={claimFaucet}
+                  disabled={!wallet.account || faucetPending}
+                  className="mt-4 rounded-full bg-white px-5 py-2.5 text-sm font-semibold text-black enabled:hover:bg-white/85 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {faucetPending ? "Claiming..." : "Claim Airdrop"}
+                </button>
+
+                {faucetResult && (
+                  <div className="mt-4 rounded-[24px] border border-emerald-400/20 bg-emerald-500/10 p-4">
+                    <p className="text-sm font-semibold text-emerald-200">Faucet transfers sent</p>
+                    <div className="mt-3 space-y-2">
+                      {faucetResult.map((transfer) => (
+                        <div key={transfer.txHash} className="flex items-center justify-between gap-3 text-sm">
+                          <span className="text-white/80">{transfer.symbol}</span>
+                          <a
+                            href={txparkExplorerTxUrl(transfer.txHash)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="font-mono text-emerald-200 hover:text-emerald-100"
+                          >
+                            {shortenTxHash(transfer.txHash)}
+                          </a>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 

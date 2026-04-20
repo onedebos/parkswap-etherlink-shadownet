@@ -14,7 +14,7 @@ export function AttributionBanner() {
           >
             IguanaDEX
           </a>{" "}
-          on the Tezos X EVM testnet.
+          on Etherlink Shadownet.
         </p>
         <a
           href={ATTRIBUTION_READ_MORE_URL}
