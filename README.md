@@ -1,6 +1,6 @@
 # ParkSwap UI
 
-Minimal Next.js frontend for the Tezos X testnet `USDC / xU3O8` pool (ParkSwap).
+Minimal Next.js frontend for the Tezos X Previewnet `USDC / xU3O8` pool (ParkSwap).
 
 ## Run locally
 
@@ -14,7 +14,7 @@ Open [http://localhost:3000](http://localhost:3000).
 ## What it does
 
 - Connects to an injected wallet like MetaMask or Rabby
-- Detects whether the wallet is on ParkSwap / Tezos X testnet (`127124`)
+- Detects whether the wallet is on Tezos X Previewnet (`128064`)
 - Shows live `USDC` and `XU3O8` wallet balances
 - Reads the live pool price from the deployed pool
 - Quotes swaps with the deployed quoter
@@ -33,6 +33,6 @@ Open [http://localhost:3000](http://localhost:3000).
 
 ## Notes
 
-- The app uses the public demo RPC: `https://demo.txpark.nomadic-labs.com/rpc`
+- The app can target Previewnet or Testnet defaults via `NEXT_PUBLIC_DEPLOYMENT_NETWORK`
 - The swap flow is intentionally MVP-simple and uses `amountOutMinimum = 0`
 - The liquidity action uses the existing fee tier `2500` and full-range ticks

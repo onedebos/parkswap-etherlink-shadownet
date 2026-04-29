@@ -1,4 +1,5 @@
 import { ATTRIBUTION_READ_MORE_URL, IGUANADEX_HOME_URL } from "@/lib/site-metadata";
+import { DEX_NETWORK_DISPLAY_NAME } from "@/lib/txpark";
 
 export function AttributionBanner() {
   return (
@@ -21,7 +22,7 @@ export function AttributionBanner() {
             rel="noopener noreferrer"
             className="font-medium text-etherlink no-underline hover:text-[#5febdb]"
           >
-            Etherlink Shadownet
+            {DEX_NETWORK_DISPLAY_NAME}
           </a>
           .
         </p>

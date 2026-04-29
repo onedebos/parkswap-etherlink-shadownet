@@ -1,11 +1,13 @@
+import { dexChainConfig } from "@/lib/chain-config";
+
 /** Shared copy for meta tags, Open Graph, Twitter Card, and OG image. */
-export const LINK_PREVIEW_DESCRIPTION = "This is a fork of IguanaDEX built on Etherlink Shadownet.";
+export const LINK_PREVIEW_DESCRIPTION = `This is a fork of IguanaDEX built on ${dexChainConfig.networkDisplayName}.`;
 
 /** Linked from the upper attribution bar (“IguanaDEX”). */
 export const IGUANADEX_HOME_URL = "https://iguanadex.com/";
 
-/** “Read more” in the attribution bar (Etherlink network docs). */
-export const ATTRIBUTION_READ_MORE_URL = "https://docs.etherlink.com/get-started/network-information/";
+/** “Read more” in the attribution bar (network info/docs). */
+export const ATTRIBUTION_READ_MORE_URL = dexChainConfig.readMoreUrl;
 
-/** Shadownet XTZ faucet (app menu “Get XTZ”). */
-export const ETHERLINK_SHADOWNET_FAUCET_URL = "https://shadownet.faucet.etherlink.com/";
+/** Chain faucet (app menu “Get XTZ”). */
+export const NETWORK_FAUCET_URL = dexChainConfig.faucetUrl;

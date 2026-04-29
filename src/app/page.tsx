@@ -10,7 +10,7 @@ import { ParkSwapLogo } from "@/components/ParkSwapLogo";
 import { SwapPanel } from "@/components/SwapPanel";
 import { WalletTokenIcon } from "@/components/WalletTokenIcon";
 import { cryptoIconSvgUrl } from "@/lib/cryptoicons";
-import { ETHERLINK_SHADOWNET_FAUCET_URL } from "@/lib/site-metadata";
+import { NETWORK_FAUCET_URL } from "@/lib/site-metadata";
 import { configurableTokenArtifact } from "@/lib/configurable-token-artifact";
 import {
   FEATURED_TOKENS,
@@ -772,7 +772,7 @@ export default function Home() {
                       </span>
                     </div>
                     <a
-                      href={ETHERLINK_SHADOWNET_FAUCET_URL}
+                      href={NETWORK_FAUCET_URL}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="flex w-full items-center justify-center rounded-xl bg-white/10 px-3 py-2.5 text-sm font-semibold text-white hover:bg-white/15"
