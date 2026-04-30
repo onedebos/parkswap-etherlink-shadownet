@@ -33,6 +33,8 @@ function chainIdToHex(chainId: number): string {
   return `0x${chainId.toString(16)}`;
 }
 
+const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
+
 export type DeploymentNetwork = "previewnet" | "testnet";
 
 type DexNetworkPreset = {
@@ -99,20 +101,20 @@ const PREVIEWNET_PRESET: DexNetworkPreset = {
   faucetUrl: "https://faucet.previewnet.tezosx.nomadic-labs.com",
   readMoreUrl: "https://github.com/trilitech/tezos-x-previewnet",
   contracts: {
-    swapRouter: "0x0000000000000000000000000000000000000000",
-    quoterV2: "0x0000000000000000000000000000000000000000",
-    positionManager: "0x0000000000000000000000000000000000000000",
-    factory: "0x0000000000000000000000000000000000000000",
+    swapRouter: "0xf8B483D58Dd59cDa3572a908c88e0D729eA72728",
+    quoterV2: "0xD2c17053d966227FEd5bc02D930c869D1B387eD8",
+    positionManager: "0x6d66C9d3Fa11A3F5f68F20FfBF635dAA841ec98B",
+    factory: "0x580651800DCb912134F474E6B203C4cB6B0e4a97",
   },
   tokens: {
-    usdc: "0x0000000000000000000000000000000000000000",
-    xu3o8: "0x0000000000000000000000000000000000000000",
-    vnxau: "0x0000000000000000000000000000000000000000",
+    usdc: "0x39fD36e60A839DE4cB5DaE0E1009c0aa612Bfba1",
+    xu3o8: "0x8286163E08D2061e73d73990e18B6f1107c338A0",
+    vnxau: ZERO_ADDRESS,
   },
   pools: {
-    featured: "0x0000000000000000000000000000000000000000",
-    usdcXu3o8: "0x0000000000000000000000000000000000000000",
-    usdcVnxau: "0x0000000000000000000000000000000000000000",
+    featured: "0x7BA90283CDBAAf6D8472B649F672CeAD2b5f5AF5",
+    usdcXu3o8: "0x7BA90283CDBAAf6D8472B649F672CeAD2b5f5AF5",
+    usdcVnxau: ZERO_ADDRESS,
   },
 };
 
@@ -180,13 +182,17 @@ function buildDexChainConfig(): DexChainConfig {
   const explicitVnxauAddr =
     parseOptionalAddressEnv("NEXT_PUBLIC_VNXAU_TOKEN_ADDRESS") ??
     parseOptionalAddressEnv("NEXT_PUBLIC_TOKEN_VNXAU_ADDRESS");
-  const vnxauAddr = explicitVnxauAddr ?? (getAddress(preset.tokens.vnxau) as `0x${string}`);
+  const presetVnxauAddr =
+    preset.tokens.vnxau === ZERO_ADDRESS ? null : (getAddress(preset.tokens.vnxau) as `0x${string}`);
+  const vnxauAddr = explicitVnxauAddr ?? presetVnxauAddr;
 
   const explicitPool =
     parseOptionalAddressEnv("NEXT_PUBLIC_FEATURED_POOL_ADDRESS") ??
     parseOptionalAddressEnv("NEXT_PUBLIC_DASHBOARD_POOL_ADDRESS");
+  const presetFeaturedPool =
+    preset.pools.featured === ZERO_ADDRESS ? null : (getAddress(preset.pools.featured) as `0x${string}`);
   const featuredPool: `0x${string}` | null =
-    explicitPool ?? (getAddress(preset.pools.featured) as `0x${string}`);
+    explicitPool ?? presetFeaturedPool;
 
   const usdcToken = {
     address: parseAddressEnv("NEXT_PUBLIC_TOKEN_USDC_ADDRESS", preset.tokens.usdc),
@@ -215,7 +221,7 @@ function buildDexChainConfig(): DexChainConfig {
   const poolUsdcXu3o8 =
     parseOptionalAddressEnv("NEXT_PUBLIC_POOL_USDC_XU3O8_ADDRESS") ??
     featuredPool ??
-    (getAddress(preset.pools.usdcXu3o8) as `0x${string}`);
+    (preset.pools.usdcXu3o8 === ZERO_ADDRESS ? null : (getAddress(preset.pools.usdcXu3o8) as `0x${string}`));
   if (poolUsdcXu3o8) {
     configuredPools.push({
       key: "usdc-xu3o8",
@@ -227,7 +233,7 @@ function buildDexChainConfig(): DexChainConfig {
   }
   const poolUsdcVnxau =
     parseOptionalAddressEnv("NEXT_PUBLIC_POOL_USDC_VNXAU_ADDRESS") ??
-    (getAddress(preset.pools.usdcVnxau) as `0x${string}`);
+    (preset.pools.usdcVnxau === ZERO_ADDRESS ? null : (getAddress(preset.pools.usdcVnxau) as `0x${string}`));
   if (poolUsdcVnxau && vnxauToken) {
     configuredPools.push({
       key: "usdc-vnxau",
