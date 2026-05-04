@@ -1,7 +1,7 @@
 import { ImageResponse } from "next/og";
 import { LINK_PREVIEW_DESCRIPTION } from "@/lib/site-metadata";
 
-export const alt = "ParkSwap — fork of IguanaDEX on Tezos X Previewnet";
+export const alt = "xDex — fork of IguanaDEX on Tezos X Previewnet";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
@@ -53,7 +53,7 @@ export default function OpenGraphImage() {
             maxWidth: 760,
           }}
         >
-          <div style={{ fontSize: 68, fontWeight: 700, color: "#ffffff", letterSpacing: "-0.02em" }}>ParkSwap</div>
+          <div style={{ fontSize: 68, fontWeight: 700, color: "#ffffff", letterSpacing: "-0.02em" }}>xDex</div>
           <div style={{ fontSize: 34, color: "rgba(255,255,255,0.88)", lineHeight: 1.4 }}>{LINK_PREVIEW_DESCRIPTION}</div>
         </div>
       </div>

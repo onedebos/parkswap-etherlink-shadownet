@@ -1,6 +1,6 @@
-# ParkSwap UI
+# xDex UI
 
-Minimal Next.js frontend for the Tezos X Previewnet `USDC / xU3O8` pool (ParkSwap).
+Minimal Next.js frontend for the Tezos X Previewnet `USDC / xU3O8` pool (xDex).
 
 ## Run locally
 

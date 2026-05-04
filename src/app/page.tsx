@@ -714,7 +714,7 @@ export default function Home() {
           <div className="flex items-center gap-6">
             <div className="flex items-center gap-2">
               <ParkSwapLogo className="h-10 w-10 shrink-0" size={40} />
-              <p className="text-3xl font-semibold tracking-tight text-white">ParkSwap</p>
+              <p className="text-3xl font-semibold tracking-tight text-white">xDex</p>
             </div>
             <nav className="flex flex-wrap items-center gap-2 text-sm text-white/65">
               {[
@@ -1236,7 +1236,7 @@ export default function Home() {
                 <p className="text-sm text-white/55">Recent Tokens</p>
                 <h3 className="mt-1 text-xl font-semibold tracking-tight">Your deployed tokens</h3>
                 <p className="mt-2 text-sm text-white/45">
-                  A list of tokens you{"'"}ve deployed on ParkSwap recently.{" "}
+                  A list of tokens you{"'"}ve deployed on xDex recently.{" "}
                   <button
                     type="button"
                     onClick={() => setActiveView("create")}

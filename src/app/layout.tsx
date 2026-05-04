@@ -9,19 +9,19 @@ const metadataBaseUrl =
 
 export const metadata: Metadata = {
   metadataBase: new URL(metadataBaseUrl),
-  title: "ParkSwap",
+  title: "xDex",
   description: LINK_PREVIEW_DESCRIPTION,
   openGraph: {
-    title: "ParkSwap",
+    title: "xDex",
     description: LINK_PREVIEW_DESCRIPTION,
-    siteName: "ParkSwap",
+    siteName: "xDex",
     locale: "en_US",
     type: "website",
     url: "/",
   },
   twitter: {
     card: "summary_large_image",
-    title: "ParkSwap",
+    title: "xDex",
     description: LINK_PREVIEW_DESCRIPTION,
   },
 };
