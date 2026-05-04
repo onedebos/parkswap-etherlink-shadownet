@@ -1181,16 +1181,15 @@ export default function Home() {
                   <p className="mt-1 break-all font-mono text-sm text-white/85">
                     {wallet.account ?? "Connect wallet to claim"}
                   </p>
+                  <button
+                    type="button"
+                    onClick={claimFaucet}
+                    disabled={!wallet.account || faucetPending}
+                    className="mt-4 rounded-full bg-white px-5 py-2.5 text-sm font-semibold text-black enabled:hover:bg-white/85 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    {faucetPending ? "Claiming..." : "Claim Airdrop"}
+                  </button>
                 </div>
-
-                <button
-                  type="button"
-                  onClick={claimFaucet}
-                  disabled={!wallet.account || faucetPending}
-                  className="mt-4 rounded-full bg-white px-5 py-2.5 text-sm font-semibold text-black enabled:hover:bg-white/85 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  {faucetPending ? "Claiming..." : "Claim Airdrop"}
-                </button>
 
                 {faucetResult && (
                   <div className="mt-4 rounded-[24px] border border-emerald-400/20 bg-emerald-500/10 p-4">
@@ -1212,6 +1211,23 @@ export default function Home() {
                     </div>
                   </div>
                 )}
+
+                <div className="mt-6 rounded-[24px] border border-white/10 bg-black/20 p-4">
+                  <p className="text-sm text-white/45">Need gas?</p>
+                  <h4 className="mt-1 text-lg font-semibold tracking-tight text-white">Get XTZ on Previewnet</h4>
+                  <p className="mt-2 text-sm text-white/45">
+                    Use the Tezos X Previewnet faucet to request native XTZ for gas before swapping, adding liquidity,
+                    or creating tokens.
+                  </p>
+                  <a
+                    href={NETWORK_FAUCET_URL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-4 inline-flex rounded-full bg-white px-5 py-2.5 text-sm font-semibold text-black hover:bg-white/85"
+                  >
+                    Open XTZ Faucet
+                  </a>
+                </div>
               </div>
             )}
 
