@@ -35,6 +35,10 @@ function chainIdToHex(chainId: number): string {
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 
+function preferPresetInPreviewnet<T>(deploymentNetwork: DeploymentNetwork, presetValue: T, overrideValue: T): T {
+  return deploymentNetwork === "previewnet" ? presetValue : overrideValue;
+}
+
 export type DeploymentNetwork = "previewnet" | "testnet";
 
 type DexNetworkPreset = {
@@ -109,12 +113,12 @@ const PREVIEWNET_PRESET: DexNetworkPreset = {
   tokens: {
     usdc: "0x39fD36e60A839DE4cB5DaE0E1009c0aa612Bfba1",
     xu3o8: "0x8286163E08D2061e73d73990e18B6f1107c338A0",
-    vnxau: ZERO_ADDRESS,
+    vnxau: "0x216e936587D4B550b2587E8fED2D03F584555742",
   },
   pools: {
     featured: "0x7BA90283CDBAAf6D8472B649F672CeAD2b5f5AF5",
     usdcXu3o8: "0x7BA90283CDBAAf6D8472B649F672CeAD2b5f5AF5",
-    usdcVnxau: ZERO_ADDRESS,
+    usdcVnxau: "0x1E2e640F777034bbB2812B33a9Ac89dF149202e6",
   },
 };
 
@@ -173,8 +177,16 @@ export type DexChainConfig = {
 function buildDexChainConfig(): DexChainConfig {
   const deploymentNetwork = parseDeploymentNetwork();
   const preset = getPreset(deploymentNetwork);
-  const chainId = parsePositiveIntEnv("NEXT_PUBLIC_CHAIN_ID", preset.chainId);
-  const chainIdHex = envTrim("NEXT_PUBLIC_CHAIN_ID_HEX") ?? chainIdToHex(chainId);
+  const chainId = preferPresetInPreviewnet(
+    deploymentNetwork,
+    preset.chainId,
+    parsePositiveIntEnv("NEXT_PUBLIC_CHAIN_ID", preset.chainId),
+  );
+  const chainIdHex = preferPresetInPreviewnet(
+    deploymentNetwork,
+    chainIdToHex(preset.chainId),
+    envTrim("NEXT_PUBLIC_CHAIN_ID_HEX") ?? chainIdToHex(chainId),
+  );
 
   const usdcDecimals = parsePositiveIntEnv("NEXT_PUBLIC_TOKEN_USDC_DECIMALS", 6);
   const xu3o8Decimals = parsePositiveIntEnv("NEXT_PUBLIC_TOKEN_XU3O8_DECIMALS", 18);
@@ -184,25 +196,40 @@ function buildDexChainConfig(): DexChainConfig {
     parseOptionalAddressEnv("NEXT_PUBLIC_TOKEN_VNXAU_ADDRESS");
   const presetVnxauAddr =
     preset.tokens.vnxau === ZERO_ADDRESS ? null : (getAddress(preset.tokens.vnxau) as `0x${string}`);
-  const vnxauAddr = explicitVnxauAddr ?? presetVnxauAddr;
+  const vnxauAddr = preferPresetInPreviewnet(
+    deploymentNetwork,
+    presetVnxauAddr,
+    explicitVnxauAddr ?? presetVnxauAddr,
+  );
 
   const explicitPool =
     parseOptionalAddressEnv("NEXT_PUBLIC_FEATURED_POOL_ADDRESS") ??
     parseOptionalAddressEnv("NEXT_PUBLIC_DASHBOARD_POOL_ADDRESS");
   const presetFeaturedPool =
     preset.pools.featured === ZERO_ADDRESS ? null : (getAddress(preset.pools.featured) as `0x${string}`);
-  const featuredPool: `0x${string}` | null =
-    explicitPool ?? presetFeaturedPool;
+  const featuredPool: `0x${string}` | null = preferPresetInPreviewnet(
+    deploymentNetwork,
+    presetFeaturedPool,
+    explicitPool ?? presetFeaturedPool,
+  );
 
   const usdcToken = {
-    address: parseAddressEnv("NEXT_PUBLIC_TOKEN_USDC_ADDRESS", preset.tokens.usdc),
+    address: preferPresetInPreviewnet(
+      deploymentNetwork,
+      getAddress(preset.tokens.usdc) as `0x${string}`,
+      parseAddressEnv("NEXT_PUBLIC_TOKEN_USDC_ADDRESS", preset.tokens.usdc),
+    ),
     symbol: envTrim("NEXT_PUBLIC_TOKEN_USDC_SYMBOL") ?? "USDC",
     name: envTrim("NEXT_PUBLIC_TOKEN_USDC_NAME") ?? "USD Coin",
     decimals: usdcDecimals,
   } satisfies DexChainErc20Meta;
 
   const xu3o8Token = {
-    address: parseAddressEnv("NEXT_PUBLIC_TOKEN_XU3O8_ADDRESS", preset.tokens.xu3o8),
+    address: preferPresetInPreviewnet(
+      deploymentNetwork,
+      getAddress(preset.tokens.xu3o8) as `0x${string}`,
+      parseAddressEnv("NEXT_PUBLIC_TOKEN_XU3O8_ADDRESS", preset.tokens.xu3o8),
+    ),
     symbol: envTrim("NEXT_PUBLIC_TOKEN_XU3O8_SYMBOL") ?? "xU3O8",
     name: envTrim("NEXT_PUBLIC_TOKEN_XU3O8_NAME") ?? "xU3O8",
     decimals: xu3o8Decimals,
@@ -219,9 +246,13 @@ function buildDexChainConfig(): DexChainConfig {
 
   const configuredPools: DexChainConfig["pools"] = [];
   const poolUsdcXu3o8 =
-    parseOptionalAddressEnv("NEXT_PUBLIC_POOL_USDC_XU3O8_ADDRESS") ??
-    featuredPool ??
-    (preset.pools.usdcXu3o8 === ZERO_ADDRESS ? null : (getAddress(preset.pools.usdcXu3o8) as `0x${string}`));
+    preferPresetInPreviewnet(
+      deploymentNetwork,
+      preset.pools.usdcXu3o8 === ZERO_ADDRESS ? null : (getAddress(preset.pools.usdcXu3o8) as `0x${string}`),
+      parseOptionalAddressEnv("NEXT_PUBLIC_POOL_USDC_XU3O8_ADDRESS") ??
+        featuredPool ??
+        (preset.pools.usdcXu3o8 === ZERO_ADDRESS ? null : (getAddress(preset.pools.usdcXu3o8) as `0x${string}`)),
+    );
   if (poolUsdcXu3o8) {
     configuredPools.push({
       key: "usdc-xu3o8",
@@ -232,8 +263,12 @@ function buildDexChainConfig(): DexChainConfig {
     });
   }
   const poolUsdcVnxau =
-    parseOptionalAddressEnv("NEXT_PUBLIC_POOL_USDC_VNXAU_ADDRESS") ??
-    (preset.pools.usdcVnxau === ZERO_ADDRESS ? null : (getAddress(preset.pools.usdcVnxau) as `0x${string}`));
+    preferPresetInPreviewnet(
+      deploymentNetwork,
+      preset.pools.usdcVnxau === ZERO_ADDRESS ? null : (getAddress(preset.pools.usdcVnxau) as `0x${string}`),
+      parseOptionalAddressEnv("NEXT_PUBLIC_POOL_USDC_VNXAU_ADDRESS") ??
+        (preset.pools.usdcVnxau === ZERO_ADDRESS ? null : (getAddress(preset.pools.usdcVnxau) as `0x${string}`)),
+    );
   if (poolUsdcVnxau && vnxauToken) {
     configuredPools.push({
       key: "usdc-vnxau",
@@ -248,28 +283,76 @@ function buildDexChainConfig(): DexChainConfig {
     deploymentNetwork,
     chainId,
     chainIdHex,
-    rpcUrl: envTrim("NEXT_PUBLIC_RPC_URL") ?? preset.rpcUrl,
-    blockExplorerDefaultUrl: envTrim("NEXT_PUBLIC_BLOCK_EXPLORER_URL") ?? preset.blockExplorerUrl,
-    networkDisplayName: envTrim("NEXT_PUBLIC_NETWORK_DISPLAY_NAME") ?? preset.networkDisplayName,
-    walletAddEthereumChainName: envTrim("NEXT_PUBLIC_WALLET_CHAIN_NAME") ?? preset.walletChainName,
+    rpcUrl: preferPresetInPreviewnet(deploymentNetwork, preset.rpcUrl, envTrim("NEXT_PUBLIC_RPC_URL") ?? preset.rpcUrl),
+    blockExplorerDefaultUrl: preferPresetInPreviewnet(
+      deploymentNetwork,
+      preset.blockExplorerUrl,
+      envTrim("NEXT_PUBLIC_BLOCK_EXPLORER_URL") ?? preset.blockExplorerUrl,
+    ),
+    networkDisplayName: preferPresetInPreviewnet(
+      deploymentNetwork,
+      preset.networkDisplayName,
+      envTrim("NEXT_PUBLIC_NETWORK_DISPLAY_NAME") ?? preset.networkDisplayName,
+    ),
+    walletAddEthereumChainName: preferPresetInPreviewnet(
+      deploymentNetwork,
+      preset.walletChainName,
+      envTrim("NEXT_PUBLIC_WALLET_CHAIN_NAME") ?? preset.walletChainName,
+    ),
     nativeCurrency: {
-      name: envTrim("NEXT_PUBLIC_NATIVE_CURRENCY_NAME") ?? preset.nativeCurrency.name,
-      symbol: envTrim("NEXT_PUBLIC_NATIVE_CURRENCY_SYMBOL") ?? preset.nativeCurrency.symbol,
-      decimals: parsePositiveIntEnv("NEXT_PUBLIC_NATIVE_CURRENCY_DECIMALS", preset.nativeCurrency.decimals),
+      name: preferPresetInPreviewnet(
+        deploymentNetwork,
+        preset.nativeCurrency.name,
+        envTrim("NEXT_PUBLIC_NATIVE_CURRENCY_NAME") ?? preset.nativeCurrency.name,
+      ),
+      symbol: preferPresetInPreviewnet(
+        deploymentNetwork,
+        preset.nativeCurrency.symbol,
+        envTrim("NEXT_PUBLIC_NATIVE_CURRENCY_SYMBOL") ?? preset.nativeCurrency.symbol,
+      ),
+      decimals: preferPresetInPreviewnet(
+        deploymentNetwork,
+        preset.nativeCurrency.decimals,
+        parsePositiveIntEnv("NEXT_PUBLIC_NATIVE_CURRENCY_DECIMALS", preset.nativeCurrency.decimals),
+      ),
     },
     contracts: {
-      swapRouter: parseAddressEnv("NEXT_PUBLIC_SWAP_ROUTER_ADDRESS", preset.contracts.swapRouter),
-      quoterV2: parseAddressEnv("NEXT_PUBLIC_QUOTER_V2_ADDRESS", preset.contracts.quoterV2),
-      positionManager: parseAddressEnv("NEXT_PUBLIC_POSITION_MANAGER_ADDRESS", preset.contracts.positionManager),
-      factory: parseAddressEnv("NEXT_PUBLIC_V3_FACTORY_ADDRESS", preset.contracts.factory),
+      swapRouter: preferPresetInPreviewnet(
+        deploymentNetwork,
+        getAddress(preset.contracts.swapRouter) as `0x${string}`,
+        parseAddressEnv("NEXT_PUBLIC_SWAP_ROUTER_ADDRESS", preset.contracts.swapRouter),
+      ),
+      quoterV2: preferPresetInPreviewnet(
+        deploymentNetwork,
+        getAddress(preset.contracts.quoterV2) as `0x${string}`,
+        parseAddressEnv("NEXT_PUBLIC_QUOTER_V2_ADDRESS", preset.contracts.quoterV2),
+      ),
+      positionManager: preferPresetInPreviewnet(
+        deploymentNetwork,
+        getAddress(preset.contracts.positionManager) as `0x${string}`,
+        parseAddressEnv("NEXT_PUBLIC_POSITION_MANAGER_ADDRESS", preset.contracts.positionManager),
+      ),
+      factory: preferPresetInPreviewnet(
+        deploymentNetwork,
+        getAddress(preset.contracts.factory) as `0x${string}`,
+        parseAddressEnv("NEXT_PUBLIC_V3_FACTORY_ADDRESS", preset.contracts.factory),
+      ),
     },
     tokens: {
       usdc: usdcToken,
       xu3o8: xu3o8Token,
       vnxau: vnxauToken,
     },
-    faucetUrl: envTrim("NEXT_PUBLIC_FAUCET_URL") ?? preset.faucetUrl,
-    readMoreUrl: envTrim("NEXT_PUBLIC_NETWORK_INFO_URL") ?? preset.readMoreUrl,
+    faucetUrl: preferPresetInPreviewnet(
+      deploymentNetwork,
+      preset.faucetUrl,
+      envTrim("NEXT_PUBLIC_FAUCET_URL") ?? preset.faucetUrl,
+    ),
+    readMoreUrl: preferPresetInPreviewnet(
+      deploymentNetwork,
+      preset.readMoreUrl,
+      envTrim("NEXT_PUBLIC_NETWORK_INFO_URL") ?? preset.readMoreUrl,
+    ),
     pools: configuredPools,
     featuredPoolAddress: featuredPool,
   };
